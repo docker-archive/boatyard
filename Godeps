@@ -1,0 +1,10 @@
+{
+	"ImportPath": "github.com/tutumcloud/tutum-builder",
+	"GoVersion": "go1.1.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/ant0ine/go-json-rest",
+			"Rev": "v2.0.2"
+		}
+	]
+}
