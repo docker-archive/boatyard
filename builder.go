@@ -9,7 +9,6 @@ import (
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/garyburd/redigo/redis"
 	"github.com/nu7hatch/gouuid"
-	"io/ioutil"
 	"bufio"
 	"log"
 	"net/http"
@@ -248,12 +247,9 @@ func DockerNode() string {
 	var docker_node string
 	if os.Getenv("DOCKER_HOST") != "" {
 		docker_node = os.Getenv("DOCKER_HOST")
-		// docker_node = "http://localhost:4243"
-		fmt.Println(docker_node + "is the DOCKER NODE *****^^^^^((((((")
 	} else {
 		docker_node = "http://127.0.0.1:4243"
 	}
-	// fmt.Println(docker_node + "is the docker node ^^^^")
 	return docker_node
 }
 
@@ -264,7 +260,6 @@ func Dial() net.Conn {
 		dockerHost := os.Getenv("DOCKER_HOST")
 		splitStrings := strings.SplitN(dockerHost, "//", 2)
 		docker_host = splitStrings[1]
-		// fmt.Println(docker_host + "^^^^^ should be loclahost:4243    ((((((")
 	} else {
 		docker_host = "localhost:4243"
 	}
@@ -283,7 +278,6 @@ func RedisConnection() redis.Conn {
 	if err != nil {
 		log.Fatal(err)
 	}
-	// fmt.Println("Made it to returning the redis connection")
 	return c
 }
 
@@ -294,7 +288,6 @@ func JobUUIDString() string {
 		log.Fatal(uuidErr)
 	}
 	s := uniqueJobId.String()
-	// fmt.Println(s + "Made it to the end of the JobUUID FUNCT")
 	return s
 
 }
@@ -315,21 +308,18 @@ func CachePort() string {
 	} else {
 		cachePort = "6379"
 	}
-	// fmt.Println(cacheTCPAddress + ":" + cachePort + "is the CachePort Return")
 	return cacheTCPAddress + ":" + cachePort
 }
 
 func ServerAddress(privateRepo string) string {
 
-	//The server address is different for a private repo. *******^&%^*&^*%&********
-	fmt.Println(privateRepo + "right before the IFSTATEMENT")
+	//The server address is different for a private repo.
 	var serveraddress string
 	if privateRepo != "" {
 		serveraddress = ("https://" + privateRepo + "/v1/")
 	} else {
 		serveraddress = "https://index.docker.io/v1/"
 	}
-	// fmt.Println(serveraddress + "is the SERVERADDRESSSSS")
 	return serveraddress
 
 }
@@ -338,10 +328,8 @@ func ServerAddress(privateRepo string) string {
 func ReaderForInputType(passedParams PassedParams) io.Reader {
 	
 	if passedParams.Dockerfile != "" {
-		fmt.Println("Reader WAS BUILT WITH THE the dockerfile **!*@!@")
 		return TarzipBufferFromDockerfile(passedParams.Dockerfile)
 	} else {
-		fmt.Println("REQUEST WAS BUILT WITH the url!!! **!*@!@")
 		return ResponseZipFromURL(passedParams.ZipUrl)
 	}
 

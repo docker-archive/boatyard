@@ -1,0 +1,14 @@
+builder:
+  build: .
+  ports:
+    - "8080"
+  links:
+    - cache
+  environment:
+    CACHE_PASSWORD: "CHANGEME"
+cache:
+  image: tutum/redis
+  expose:
+    - "6379"
+  environment:
+    REDIS_PASS: "CHANGEME"

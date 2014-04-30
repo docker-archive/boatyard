@@ -1,3 +1,3 @@
 FROM tutum/buildstep
-EXPOSE 80
+EXPOSE 8080
 CMD ["/start", "builder"]
