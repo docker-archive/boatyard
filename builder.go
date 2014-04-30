@@ -278,6 +278,11 @@ func RedisConnection() redis.Conn {
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	if os.Getenv("CACHE_PASSWORD") != "" {
+		c.Do("AUTH", os.Getenv("CACHE_PASSWORD"))
+	}
+
 	return c
 }
 
