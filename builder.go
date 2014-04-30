@@ -25,7 +25,7 @@ type PassedParams struct {
 	Password   string
 	Email      string
 	Dockerfile string
-	ZipUrl 	   string
+	TarUrl 	   string
 }
 
 type PushAuth struct {
@@ -255,16 +255,19 @@ func DockerNode() string {
 
 
 func Dial() net.Conn {
+	var docker_proto string
 	var docker_host string
 	if os.Getenv("DOCKER_HOST") != "" {
 		dockerHost := os.Getenv("DOCKER_HOST")
-		splitStrings := strings.SplitN(dockerHost, "//", 2)
+		splitStrings := strings.SplitN(dockerHost, "://", 2)
+		docker_proto = splitStrings[0]
 		docker_host = splitStrings[1]
 	} else {
+		docker_proto = "tcp"
 		docker_host = "localhost:4243"
 	}
 
-	dockerDial, err := net.Dial("tcp", docker_host)
+	dockerDial, err := net.Dial(docker_proto, docker_host)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -335,7 +338,7 @@ func ReaderForInputType(passedParams PassedParams) io.Reader {
 	if passedParams.Dockerfile != "" {
 		return TarzipBufferFromDockerfile(passedParams.Dockerfile)
 	} else {
-		return ResponseZipFromURL(passedParams.ZipUrl)
+		return ResponseZipFromURL(passedParams.TarUrl)
 	}
 
 }
