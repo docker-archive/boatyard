@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net"
 	"io"
+	"io/ioutil"
 )
 
 type PassedParams struct {
@@ -119,22 +120,35 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		rest.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
+	//Now verify the params.  Make sure that we have what we need.
+	// paramValidation := Validate(passedParams)
 
-	//Create a uuid for the specific job.
-	var jobid JobID
-	jobid.JobIdentifier = JobUUIDString()
+	if Validate(passedParams) {
+		//Create a uuid for the specific job.
+		var jobid JobID
+		jobid.JobIdentifier = JobUUIDString()
 
-	//Open a redis connection.  c is type redis.Conn
-	c := RedisConnection()
-	defer c.Close()
+		//Open a redis connection.  c is type redis.Conn
+		c := RedisConnection()
+		defer c.Close()
 
-	//Set the status to building in the cache.
-	c.Do("HSET", jobid.JobIdentifier, "status", "Building")
+		//Set the status to building in the cache.
+		c.Do("HSET", jobid.JobIdentifier, "status", "Building")
 
-	//Write the jobid back and flush the buffer.
-	w.WriteJson(jobid)
-	w.(http.ResponseWriter).Write([]byte("\n"))
-	w.(http.Flusher).Flush()
+		//Launch a goroutine to build, push, and delete.  Updates the cache as the process goes on.
+		go BuildPushAndDeleteImage(jobid.JobIdentifier, passedParams, c)
+
+		//Write the jobid back
+		w.WriteJson(jobid)
+	} else {
+		//Write back bad request.
+		rest.Error(w, "Insufficient Information.  Must provide at least an Image Name and a Dockerfile/Tarurl.", 400)
+	}
+
+
+}
+
+func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Conn) {
 
 	//Parse the image name if it has a . in it.  Differentiate between private and docker repos.
 	//Will cut quay.io/ichaboddee/ubuntu into quay.io AND ichaboddee/ubuntu.
@@ -149,12 +163,15 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 
 	//Open connection to docker and build.  The request will depend on whether a dockerfile was passed or a url to a zip.
 	dockerDial := Dial()
-	buildConnection := httputil.NewClientConn(dockerDial, nil)
+	dockerConnection := httputil.NewClientConn(dockerDial, nil)
 	buildReq, err := http.NewRequest("POST", buildUrl, ReaderForInputType(passedParams))
-    buildResponse, err := buildConnection.Do(buildReq)
+    buildResponse, err := dockerConnection.Do(buildReq)
+    // defer buildResponse.Body.Close()
 	buildReader := bufio.NewReader(buildResponse.Body)
+	if err != nil {
+		fmt.Println("error:", err)
+	}
 
-	fmt.Printf(buildResponse.Status)
 
 	var logsString string
 	//Loop through.  If stream is there append it to the buildLogs string and update the cache.
@@ -174,7 +191,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 			buildLogsSlice := []byte(logsString)
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail)...)
 			logsString = string(buildLogsSlice)
-			c.Do("HSET", jobid.JobIdentifier, "logs", logsString)
+			c.Do("HSET", jobid, "logs", logsString)
 			log.Fatal(stream.ErrorDetail)
 		}
 
@@ -182,18 +199,18 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 			buildLogsSlice := []byte(logsString)
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.Stream)...)
 			logsString = string(buildLogsSlice)
-			c.Do("HSET", jobid.JobIdentifier, "logs", logsString)
+			c.Do("HSET", jobid, "logs", logsString)
 		}
 	}
 	
 	//Update status in the cache, then start the push process.
-	c.Do("HSET", jobid.JobIdentifier, "status", "Pushing")
+	c.Do("HSET", jobid, "status", "Pushing")
 
 	pushUrl := ("/v1.10/images/" + passedParams.Image_name + "/push")
-	pushConnection := httputil.NewClientConn(dockerDial, nil)
+	// pushConnection := httputil.NewClientConn(dockerDial, nil)
 	pushReq, err := http.NewRequest("POST", pushUrl, nil)
 	pushReq.Header.Add("X-Registry-Auth", StringEncAuth(passedParams, ServerAddress(splitImageName[0])))
-    pushResponse, err := pushConnection.Do(pushReq)
+    pushResponse, err := dockerConnection.Do(pushReq)
 	pushReader := bufio.NewReader(pushResponse.Body)
 
 	//Loop through.  Only concerned with catching the error.
@@ -214,13 +231,45 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 			pushLogsSlice := []byte(logsString)
 			pushLogsSlice = append(pushLogsSlice, []byte(stream.ErrorDetail)...)
 			logsString = string(pushLogsSlice)
-			c.Do("HSET", jobid.JobIdentifier, "logs", logsString)
+			c.Do("HSET", jobid, "logs", logsString)
 			log.Fatal(stream.ErrorDetail)
 		}
 	}
 
 	//Finished.  Update status in the cache.
-	c.Do("HSET", jobid.JobIdentifier, "status", "Finished")
+	c.Do("HSET", jobid, "status", "Finished")
+
+
+	//Delete it from the 
+	deleteUrl := ("/v1.10/images/" + passedParams.Image_name)
+	//WORKS NOW CLEAN IT UP
+	deleteReq, err := http.NewRequest("DELETE", deleteUrl, nil)
+    deleteResponse, err := dockerConnection.Do(deleteReq)
+    // defer buildResponse.Body.Close()
+	deleteContents, err := ioutil.ReadAll(deleteResponse.Body)
+
+	fmt.Printf(string(deleteContents))
+
+	//Close connection at the end?
+	dockerConnection.Close()
+
+}
+
+func Validate(passedParams PassedParams) bool {
+	//Use a switch statement?  What are the possible fuck ups?
+
+//If the 
+switch {
+	case passedParams.Dockerfile == "" && passedParams.TarUrl == "": 
+		fmt.Println("Missing TarURL and Dockerfile")
+		return false
+	case passedParams.Image_name == "": 
+		fmt.Println("MissingImagename")
+		return false
+	default:
+		fmt.Println("Validation worked")
+		return true
+}
 
 }
 
