@@ -133,7 +133,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 	passedParams := PassedParams{}
 	err := r.DecodeJsonPayload(&passedParams)
 	if err != nil {
-		rest.Error(w, err.Error(), http.StatusInternalServerError)
+		rest.Error(w, err.Error(), 400)
 		return
 	}
 
@@ -207,7 +207,8 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(buildLogsSlice)
 			c.Do("HSET", jobid, "logs", logsString)
-			CacheBuildError := "Error: " + stream.ErrorDetail.Message
+
+			CacheBuildError := "Failed: " + stream.ErrorDetail.Message
 			c.Do("HSET", jobid, "status", CacheBuildError)
 			return
 		}
@@ -253,7 +254,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 			pushLogsSlice = append(pushLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(pushLogsSlice)
 			c.Do("HSET", jobid, "logs", logsString)
-			CachePushError := "Error: " + stream.ErrorDetail.Message
+			CachePushError := "Failed: " + stream.ErrorDetail.Message
 			c.Do("HSET", jobid, "status", CachePushError)
 			return
 		}
