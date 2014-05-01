@@ -17,7 +17,6 @@ import (
 	"net/http/httputil"
 	"net"
 	"io"
-	"io/ioutil"
 )
 
 type PassedParams struct {
@@ -49,8 +48,13 @@ type JobLogs struct {
 }
 
 type StreamCatcher struct {
+	ErrorDetail ErrorCatcher `json:"errorDetail"`
 	Stream      string `json:"stream"`
-	ErrorDetail string `json:"errorDetail"`
+}
+
+type ErrorCatcher struct {
+	Message 	string `json:"message"`
+	Error 		string `json:"error"`
 }
 
 func main() {
@@ -84,14 +88,21 @@ func GetStatusForJobID(w rest.ResponseWriter, r *rest.Request) {
 	c := RedisConnection()
 	defer c.Close()
 
-	var status JobStatus
-	var err error
-	status.Status, err = redis.String(c.Do("HGET", jobid, "status"))
-	if err != nil {
-		log.Fatal(err)
+	//First check if the key and field exist.
+	exists, err := redis.Bool(c.Do("HEXISTS", jobid, "status")) 
+	if exists == true {
+		var status JobStatus
+		status.Status, err = redis.String(c.Do("HGET", jobid, "status"))
+		if err != nil {
+			rest.Error(w, "Redis Cache Error", 404)
+		}
+		w.WriteJson(status)
+	} else {
+		rest.Error(w, "Jobid doesn't exist in the cache.  Bad request.", 404)
 	}
-	w.WriteJson(status)
 }
+
+
 
 //3 steps.  Unpack the jobId that came in.  Open the redis connection and get the logs.  Then write the logs back.
 func GetLogsForJobID(w rest.ResponseWriter, r *rest.Request) {
@@ -101,13 +112,18 @@ func GetLogsForJobID(w rest.ResponseWriter, r *rest.Request) {
 	c := RedisConnection()
 	defer c.Close()
 
-	var logs JobLogs
-	var err error
-	logs.Logs, err = redis.String(c.Do("HGET", jobid, "logs"))
-	if err != nil {
-		log.Fatal(err)
+	//First check if the key and field exist.
+	exists, err := redis.Bool(c.Do("HEXISTS", jobid, "logs"))
+	if exists == true {
+		var logs JobLogs
+		logs.Logs, err = redis.String(c.Do("HGET", jobid, "logs"))
+		if err != nil {
+			rest.Error(w, "Redis Cache Error", 404)
+		}
+		w.WriteJson(logs)
+	} else {
+		rest.Error(w, "Jobid doesn't exist in the cache.  Bad request.", 404)
 	}
-	w.WriteJson(logs)
 }
 
 //Builds the image in a docker node.
@@ -120,8 +136,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		rest.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	//Now verify the params.  Make sure that we have what we need.
-	// paramValidation := Validate(passedParams)
+
 
 	if Validate(passedParams) {
 		//Create a uuid for the specific job.
@@ -130,7 +145,6 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 
 		//Open a redis connection.  c is type redis.Conn
 		c := RedisConnection()
-		defer c.Close()
 
 		//Set the status to building in the cache.
 		c.Do("HSET", jobid.JobIdentifier, "status", "Building")
@@ -141,7 +155,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		//Write the jobid back
 		w.WriteJson(jobid)
 	} else {
-		//Write back bad request.
+		//Params didn't validate.  Bad Request.
 		rest.Error(w, "Insufficient Information.  Must provide at least an Image Name and a Dockerfile/Tarurl.", 400)
 	}
 
@@ -166,15 +180,15 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	dockerConnection := httputil.NewClientConn(dockerDial, nil)
 	buildReq, err := http.NewRequest("POST", buildUrl, ReaderForInputType(passedParams))
     buildResponse, err := dockerConnection.Do(buildReq)
-    // defer buildResponse.Body.Close()
+    defer buildResponse.Body.Close()
 	buildReader := bufio.NewReader(buildResponse.Body)
 	if err != nil {
-		fmt.Println("error:", err)
+		c.Do("HSET", jobid, "status", err)
+		return
 	}
 
-
 	var logsString string
-	//Loop through.  If stream is there append it to the buildLogs string and update the cache.
+	//Loop through.  If stream is there append it to the logsString and update the cache.
 	for {
 		//Breaks when there is nothing left to read.
 		line, err := buildReader.ReadBytes('\r')
@@ -186,13 +200,16 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 		//Unmarshal the json in to my structure.
 		var stream StreamCatcher
 		err = json.Unmarshal(line, &stream)
+
 		//This if catches the error from docker and puts it in logs in the cache, then fails.
-		if stream.ErrorDetail != "" {
+		if stream.ErrorDetail.Message != "" {
 			buildLogsSlice := []byte(logsString)
-			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail)...)
+			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(buildLogsSlice)
 			c.Do("HSET", jobid, "logs", logsString)
-			log.Fatal(stream.ErrorDetail)
+			CacheBuildError := "Error: " + stream.ErrorDetail.Message
+			c.Do("HSET", jobid, "status", CacheBuildError)
+			return
 		}
 
 		if stream.Stream != "" {
@@ -212,8 +229,12 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	pushReq.Header.Add("X-Registry-Auth", StringEncAuth(passedParams, ServerAddress(splitImageName[0])))
     pushResponse, err := dockerConnection.Do(pushReq)
 	pushReader := bufio.NewReader(pushResponse.Body)
+	if err != nil {
+		c.Do("HSET", jobid, "status", err)
+		return
+	}
 
-	//Loop through.  Only concerned with catching the error.
+	//Loop through.  Only concerned with catching the error.  Append it to logsString if it exists.
 	for {
 		//Breaks when there is nothing left to read.
 		line, err := pushReader.ReadBytes('\r')
@@ -226,51 +247,39 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 		var stream StreamCatcher
 		err = json.Unmarshal(line, &stream)
 
-		//This if catches the error from docker and puts it in logs in the cache, then fails.
-		if stream.ErrorDetail != "" {
+		//This if catches the error from docker and puts it in logs and status in the cache, then fails.
+		if stream.ErrorDetail.Message != "" {
 			pushLogsSlice := []byte(logsString)
-			pushLogsSlice = append(pushLogsSlice, []byte(stream.ErrorDetail)...)
+			pushLogsSlice = append(pushLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(pushLogsSlice)
 			c.Do("HSET", jobid, "logs", logsString)
-			log.Fatal(stream.ErrorDetail)
+			CachePushError := "Error: " + stream.ErrorDetail.Message
+			c.Do("HSET", jobid, "status", CachePushError)
+			return
 		}
 	}
 
-	//Finished.  Update status in the cache.
+	//Finished.  Update status in the cache and close.
 	c.Do("HSET", jobid, "status", "Finished")
+	c.Close()
 
-
-	//Delete it from the 
+	//Delete it from the docker node.  Save space.  
 	deleteUrl := ("/v1.10/images/" + passedParams.Image_name)
-	//WORKS NOW CLEAN IT UP
 	deleteReq, err := http.NewRequest("DELETE", deleteUrl, nil)
-    deleteResponse, err := dockerConnection.Do(deleteReq)
-    // defer buildResponse.Body.Close()
-	deleteContents, err := ioutil.ReadAll(deleteResponse.Body)
-
-	fmt.Printf(string(deleteContents))
-
-	//Close connection at the end?
+    dockerConnection.Do(deleteReq)
 	dockerConnection.Close()
-
 }
 
 func Validate(passedParams PassedParams) bool {
-	//Use a switch statement?  What are the possible fuck ups?
-
-//If the 
-switch {
-	case passedParams.Dockerfile == "" && passedParams.TarUrl == "": 
-		fmt.Println("Missing TarURL and Dockerfile")
-		return false
-	case passedParams.Image_name == "": 
-		fmt.Println("MissingImagename")
-		return false
-	default:
-		fmt.Println("Validation worked")
-		return true
-}
-
+//Must have an image name and either a Dockerfile or TarUrl.
+	switch {
+		case passedParams.Dockerfile == "" && passedParams.TarUrl == "": 
+			return false
+		case passedParams.Image_name == "": 
+			return false
+		default:
+			return true
+	}
 }
 
 //String encode the info required for X-AUTH.  Username, Password, Email, Serveraddress.
