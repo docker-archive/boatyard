@@ -1,4 +1,54 @@
-tutum-builder
-=============
+A Go web service for building, pushing, and purging docker images.
 
-Build from Dockerfile
+# **Usage**
+
+* The POST request builds an image in a docker instance, pushes it to a repository, then purges the image from the docker instance.  
+* The Request requires an image_name and either a docker file or a tarUrl.  
+* Username, password, and email are not necessarily required (private repos could be configured this way).  
+* In order to push to a private repo the image_name should be of the form private.repo/namespace/image.  
+* The tar file must have a dockerfile in the top level contents.
+
+**Request:**
+
+	POST /api/v1/build
+	{
+	"image_name": "namespace/image",
+	"username": "user",
+	"password": "password",
+	"email": "asdasd@gmail.com",
+	"dockerfile": "FROM ubuntu:saucy\nCMD echo \"Hello world\""
+	"tarUrl": "tarmusthaveadockerfile.com/files/hello-	world.tar.gz"
+	}
+
+**Response:**
+
+	{
+	"JobIdentifier": "ef0c7a10-31a5-4140-6087-df97c2bebcb2"
+	}
+
+The JobIdentifier can be used to check the status and logs in a redis cache with the following GET requests.
+
+**Request:**
+
+	GET /api/v1/:jobid/status
+
+**Response:**
+
+	{
+	  "Status": "Status is returned as a string."
+	}
+
+The status will catch errors, and on a successful call the job status has three stages, "Building", "Pushing", and "Finished".
+
+
+**Request:**
+	
+	GET /api/v1/:jobid/logs
+
+**Response:**
+	
+	{
+ 	 "Logs": "Logs are returned as one string."
+	}
+	
+The Logs catches the build logs and any errors returned from the docker node.  
