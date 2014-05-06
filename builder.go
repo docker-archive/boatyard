@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net"
 	"io"
+	"io/ioutil"
 )
 
 type PassedParams struct {
@@ -26,6 +27,7 @@ type PassedParams struct {
 	Email      string
 	Dockerfile string
 	TarUrl 	   string
+	TarFile    []byte
 }
 
 type PushAuth struct {
@@ -129,14 +131,31 @@ func GetLogsForJobID(w rest.ResponseWriter, r *rest.Request) {
 //Builds the image in a docker node.
 func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 
-	//Unpack the params that come in.
 	passedParams := PassedParams{}
-	err := r.DecodeJsonPayload(&passedParams)
-	if err != nil {
-		rest.Error(w, err.Error(), 400)
-		return
-	}
 
+	//If the Content-Type is multipart, parse it.  Otherwise unpack the json.
+	if strings.Contains(r.Header.Get("Content-Type"), "multipart") == true { 
+
+		form, err := r.MultipartReader()
+		TarPart, err := form.NextPart()
+		TarData, err := ioutil.ReadAll(TarPart)
+		JsonPart, err := form.NextPart()
+		JsonData, _ := ioutil.ReadAll(JsonPart)
+
+		err = json.Unmarshal(JsonData, &passedParams)
+		if err != nil {
+			rest.Error(w, err.Error(), 400)
+		}
+		passedParams.TarFile = TarData
+
+	} else {
+		//Unpack the params that come in.
+		err := r.DecodeJsonPayload(&passedParams)
+		if err != nil {
+			rest.Error(w, err.Error(), 400)
+			return
+		}
+	}
 
 	if Validate(passedParams) {
 		//Create a uuid for the specific job.
@@ -150,6 +169,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		c.Do("HSET", jobid.JobIdentifier, "status", "Building")
 
 		//Launch a goroutine to build, push, and delete.  Updates the cache as the process goes on.
+		//Also pass it the file that came from the CLI?
 		go BuildPushAndDeleteImage(jobid.JobIdentifier, passedParams, c)
 
 		//Write the jobid back
@@ -180,6 +200,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	dockerConnection := httputil.NewClientConn(dockerDial, nil)
 	buildReq, err := http.NewRequest("POST", buildUrl, ReaderForInputType(passedParams))
     buildResponse, err := dockerConnection.Do(buildReq)
+
     defer buildResponse.Body.Close()
 	buildReader := bufio.NewReader(buildResponse.Body)
 	if err != nil {
@@ -203,6 +224,8 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 
 		//This if catches the error from docker and puts it in logs in the cache, then fails.
 		if stream.ErrorDetail.Message != "" {
+
+
 			buildLogsSlice := []byte(logsString)
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(buildLogsSlice)
@@ -218,6 +241,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.Stream)...)
 			logsString = string(buildLogsSlice)
 			c.Do("HSET", jobid, "logs", logsString)
+
 		}
 	}
 	
@@ -274,7 +298,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 func Validate(passedParams PassedParams) bool {
 //Must have an image name and either a Dockerfile or TarUrl.
 	switch {
-		case passedParams.Dockerfile == "" && passedParams.TarUrl == "": 
+		case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil: 
 			return false
 		case passedParams.Image_name == "": 
 			return false
@@ -393,18 +417,24 @@ func ServerAddress(privateRepo string) string {
 
 //Reader will read from either the zip made from the dockerfile passed in or the zip from the url passed in.
 func ReaderForInputType(passedParams PassedParams) io.Reader {
-	
-	if passedParams.Dockerfile != "" {
-		return TarzipBufferFromDockerfile(passedParams.Dockerfile)
-	} else {
-		return ResponseZipFromURL(passedParams.TarUrl)
-	}
 
+	//Use a switch.  one case for Dockerfile, one for TarUrl, one for Tarfile from client???
+
+	switch {
+		case passedParams.Dockerfile != "": 
+			return ReaderForDockerfile(passedParams.Dockerfile)
+		case passedParams.TarFile  != nil: 
+			return bytes.NewReader(passedParams.TarFile)
+		case passedParams.TarUrl != "":
+			return ReaderForTarUrl(passedParams.TarUrl)
+		default:
+			return nil
+		}
 }
 
 
 //URL example = https://github.com/tutumcloud/docker-hello-world/archive/v1.0.tar.gz
-func ResponseZipFromURL(url string) io.ReadCloser {
+func ReaderForTarUrl(url string) io.ReadCloser {
 
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
@@ -412,13 +442,12 @@ func ResponseZipFromURL(url string) io.ReadCloser {
 	if err != nil {
 			log.Fatalln(err)
 		}
-
 	return response.Body
 
 }
 
 
-func TarzipBufferFromDockerfile(dockerfile string) *bytes.Buffer {
+func ReaderForDockerfile(dockerfile string) *bytes.Buffer {
 
 	// Create a buffer to write our archive to.
 	buf := new(bytes.Buffer)
