@@ -12,7 +12,7 @@ With docker and fig installed, simply run fig up tutum-builder.
 * In order to push to a private repo the image_name should be of the form private.repo/namespace/image.  
 * The tar file must have a dockerfile in the top level contents.
 
-**Example Requests:**
+**Json Requests:**
 
 	POST /api/v1/build
 	{
@@ -31,6 +31,33 @@ With docker and fig installed, simply run fig up tutum-builder.
 	"email": "asdasd@gmail.com",
 	"tarUrl": "tarmusthaveadockerfile.com/files/hello-	world.tar.gz"
 	}
+	
+**Multipart Request:**
+
+	POST /api/v1/build HTTP/1.1
+	Host: 127.0.0.1:8080
+	Cache-Control: no-cache
+	
+	----WebKitFormBoundaryE19zNvXGzXaLvS5C
+	Content-Disposition: form-data; name="TarFile"; filename="dockertarexample.tar.gz"
+	Content-Type: application/x-gzip
+	
+	
+	----WebKitFormBoundaryE19zNvXGzXaLvS5C
+	Content-Disposition: form-data; name="Json"; filename="postmantest.json"
+	Content-Type: application/json
+	
+	
+	----WebKitFormBoundaryE19zNvXGzXaLvS5C	
+		
+	Where postmantest.json has the following format. 
+	{
+	"image_name": "namespace/image",
+	"username": "user",
+	"password": "password",
+	"email": "asdasd@gmail.com"
+	}
+	
 
 **Response:**
 
