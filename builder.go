@@ -31,9 +31,9 @@ type PassedParams struct {
 	Dockerfile string
 	TarUrl 	   string
 	TarFile    []byte
-	GithubUsername string
-	GithubRepoName string
-	GithubVersion string
+	Github_username string
+	Github_reponame string
+	Github_tag string
 }
 
 type PushAuth struct {
@@ -304,7 +304,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 func Validate(passedParams PassedParams) bool {
 //Must have an image name and either a Dockerfile or TarUrl.
 	switch {
-		case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil && passedParams.GithubRepoName == "": 
+		case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil && passedParams.Github_reponame == "": 
 			return false
 		case passedParams.Image_name == "": 
 			return false
@@ -432,7 +432,7 @@ func ReaderForInputType(passedParams PassedParams) io.Reader {
 			return bytes.NewReader(passedParams.TarFile)
 		case passedParams.TarUrl != "":
 			return ReaderForTarUrl(passedParams.TarUrl)
-		case passedParams.GithubVersion != "" && passedParams.GithubUsername != "" && passedParams.GithubRepoName != "":
+		case passedParams.Github_tag != "" && passedParams.Github_username != "" && passedParams.Github_reponame != "":
 			return ReaderForGithubTar(passedParams)
 		default:
 			return nil
@@ -441,7 +441,7 @@ func ReaderForInputType(passedParams PassedParams) io.Reader {
 
 func ReaderForGithubTar(passedParams PassedParams) *bytes.Buffer {
 	
-	url := "https://github.com/" + passedParams.GithubUsername + "/" + passedParams.GithubRepoName + "/archive/v" + passedParams.GithubVersion + ".tar.gz"
+	url := "https://github.com/" + passedParams.Github_username + "/" + passedParams.Github_reponame + "/archive/v" + passedParams.Github_tag + ".tar.gz"
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
@@ -460,7 +460,7 @@ func ReaderForGithubTar(passedParams PassedParams) *bytes.Buffer {
 	io.Copy(&b, gzipReader)
 
 	//Name of the folder created by github.  We use for Regex and renaiming.
-	folderName := passedParams.GithubRepoName + "-" + passedParams.GithubVersion + "/"
+	folderName := passedParams.Github_reponame + "-" + passedParams.Github_tag + "/"
 
 	//Final buffer will catch our new TarFile
 	finalBuffer := new(bytes.Buffer)
