@@ -18,6 +18,9 @@ import (
 	"net"
 	"io"
 	"io/ioutil"
+	"regexp"
+	"compress/gzip"
+
 )
 
 type PassedParams struct {
@@ -28,6 +31,9 @@ type PassedParams struct {
 	Dockerfile string
 	TarUrl 	   string
 	TarFile    []byte
+	GithubUsername string
+	GithubRepoName string
+	GithubVersion string
 }
 
 type PushAuth struct {
@@ -298,7 +304,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 func Validate(passedParams PassedParams) bool {
 //Must have an image name and either a Dockerfile or TarUrl.
 	switch {
-		case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil: 
+		case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil && passedParams.GithubRepoName == "": 
 			return false
 		case passedParams.Image_name == "": 
 			return false
@@ -418,8 +424,7 @@ func ServerAddress(privateRepo string) string {
 //Reader will read from either the zip made from the dockerfile passed in or the zip from the url passed in.
 func ReaderForInputType(passedParams PassedParams) io.Reader {
 
-	//Use a switch.  one case for Dockerfile, one for TarUrl, one for Tarfile from client???
-
+	//Use a switch.  one case for Dockerfile, one for TarUrl, one for Tarfile from client?
 	switch {
 		case passedParams.Dockerfile != "": 
 			return ReaderForDockerfile(passedParams.Dockerfile)
@@ -427,11 +432,79 @@ func ReaderForInputType(passedParams PassedParams) io.Reader {
 			return bytes.NewReader(passedParams.TarFile)
 		case passedParams.TarUrl != "":
 			return ReaderForTarUrl(passedParams.TarUrl)
+		case passedParams.GithubVersion != "" && passedParams.GithubUsername != "" && passedParams.GithubRepoName != "":
+			return ReaderForGithubTar(passedParams)
 		default:
 			return nil
 		}
 }
 
+func ReaderForGithubTar(passedParams PassedParams) *bytes.Buffer {
+	
+	url := "https://github.com/" + passedParams.GithubUsername + "/" + passedParams.GithubRepoName + "/archive/v" + passedParams.GithubVersion + ".tar.gz"
+	client := &http.Client{}
+	req, err := http.NewRequest("GET", url, nil)
+	response, err := client.Do(req)
+	if err != nil {
+			log.Fatalln(err)
+		}
+	contents, err :=  ioutil.ReadAll(response.Body)
+
+
+	//Now let's unzip it.
+
+	zippedBytesReader := bytes.NewReader(contents)
+	gzipReader, err := gzip.NewReader(zippedBytesReader)
+
+	var b bytes.Buffer
+	io.Copy(&b, gzipReader)
+
+	//Name of the folder created by github.  We use for Regex and renaiming.
+	folderName := passedParams.GithubRepoName + "-" + passedParams.GithubVersion + "/"
+
+	//Final buffer will catch our new TarFile
+	finalBuffer := new(bytes.Buffer)
+	tarWriter := tar.NewWriter(finalBuffer)
+
+	//Reads our unzipped TarFile so that we can loop through each file.
+	tarBytesReader := bytes.NewReader(b.Bytes())
+	tarReader := tar.NewReader(tarBytesReader)
+	for {
+		hdr, err := tarReader.Next()
+		if err == io.EOF {
+			// end of tar archive
+			break
+		}
+		if err != nil {
+			log.Println(err)
+		}
+
+		//Regex will match the content in the folders path, and not the folder itself.
+		//Then we can copy the file into our new tar file.
+
+		matched, err := regexp.MatchString(folderName + ".+", hdr.Name)
+		if matched {
+			unloadBuffer := new(bytes.Buffer)
+			_, err := io.Copy(unloadBuffer, tarReader)
+			if err != nil {
+				log.Println(err)
+			}
+
+			//Strip the folder off the name.
+			// change the header name
+			slicedHeader := strings.SplitN(hdr.Name, folderName, 2)
+			hdr.Name = slicedHeader[1]
+			if err := tarWriter.WriteHeader(hdr); err != nil {
+				log.Println(err)
+			}
+
+			if _, err := tarWriter.Write(unloadBuffer.Bytes()); err != nil {
+				log.Println(err)
+			}
+		}		
+	}
+	return finalBuffer
+}
 
 //URL example = https://github.com/tutumcloud/docker-hello-world/archive/v1.0.tar.gz
 func ReaderForTarUrl(url string) io.ReadCloser {
