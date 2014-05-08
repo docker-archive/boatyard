@@ -20,6 +20,7 @@ import (
 	"io/ioutil"
 	"regexp"
 	"compress/gzip"
+	"errors"
 
 )
 
@@ -204,7 +205,12 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	//Open connection to docker and build.  The request will depend on whether a dockerfile was passed or a url to a zip.
 	dockerDial := Dial()
 	dockerConnection := httputil.NewClientConn(dockerDial, nil)
-	buildReq, err := http.NewRequest("POST", buildUrl, ReaderForInputType(passedParams))
+	readerForInput, err := ReaderForInputType(passedParams, c, jobid)
+	if err != nil {
+		fmt.Println("readerForInput if worked.")
+		return
+	}
+	buildReq, err := http.NewRequest("POST", buildUrl, readerForInput)
     buildResponse, err := dockerConnection.Do(buildReq)
 
     defer buildResponse.Body.Close()
@@ -358,6 +364,7 @@ func Dial() net.Conn {
 
 	dockerDial, err := net.Dial(docker_proto, docker_host)
 	if err != nil {
+		fmt.Println("Failed to reach docker")
 		log.Fatal(err)
 	}
 
@@ -366,9 +373,10 @@ func Dial() net.Conn {
 
 //Open a redis connection.
 func RedisConnection() redis.Conn {
+
 	c, err := redis.Dial("tcp", CachePort())
 	if err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	if os.Getenv("CACHE_PASSWORD") != "" {
@@ -422,45 +430,60 @@ func ServerAddress(privateRepo string) string {
 }
 
 //Reader will read from either the zip made from the dockerfile passed in or the zip from the url passed in.
-func ReaderForInputType(passedParams PassedParams) io.Reader {
+func ReaderForInputType(passedParams PassedParams, c redis.Conn, jobid string) (io.Reader, error) {
 
 	//Use a switch.  one case for Dockerfile, one for TarUrl, one for Tarfile from client?
 	switch {
 		case passedParams.Dockerfile != "": 
-			return ReaderForDockerfile(passedParams.Dockerfile)
+			return ReaderForDockerfile(passedParams.Dockerfile), nil
 		case passedParams.TarFile  != nil: 
-			return bytes.NewReader(passedParams.TarFile)
+			return bytes.NewReader(passedParams.TarFile), nil
 		case passedParams.TarUrl != "":
-			return ReaderForTarUrl(passedParams.TarUrl)
+			return ReaderForTarUrl(passedParams.TarUrl), nil
 		case passedParams.Github_tag != "" && passedParams.Github_username != "" && passedParams.Github_reponame != "":
-			return ReaderForGithubTar(passedParams)
+			return ReaderForGithubTar(passedParams, c, jobid)
 		default:
-			return nil
+			return nil, errors.New("Failed in the ReaderForInputType.  Got to default")
 		}
+
 }
 
-func ReaderForGithubTar(passedParams PassedParams) *bytes.Buffer {
-	
-	url := "https://github.com/" + passedParams.Github_username + "/" + passedParams.Github_reponame + "/archive/v" + passedParams.Github_tag + ".tar.gz"
+func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (*bytes.Buffer, error) {
+
+	url := "https://github.com/" + passedParams.Github_username + "/" + passedParams.Github_reponame + "/archive/" + passedParams.Github_tag + ".tar.gz"
+	fmt.Println(url)
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
 	if err != nil {
 			log.Fatalln(err)
 		}
+	//Fail Gracefully  If the response is a 404 send that back.
+	fmt.Println(response.Status + "is the status.")
+	if response.Status == "404 Not Found" {
+		c.Do("HSET", jobid, "status", response.Status + " - Make sure the github repo and tag are correct.")
+		return nil, errors.New("Failed download from github.")
+	}
 	contents, err :=  ioutil.ReadAll(response.Body)
 
-
 	//Now let's unzip it.
-
 	zippedBytesReader := bytes.NewReader(contents)
 	gzipReader, err := gzip.NewReader(zippedBytesReader)
 
 	var b bytes.Buffer
 	io.Copy(&b, gzipReader)
 
-	//Name of the folder created by github.  We use for Regex and renaiming.
-	folderName := passedParams.Github_reponame + "-" + passedParams.Github_tag + "/"
+	var folderName string
+	//Name of the folder created by github.  We use for Regex and renaiming.  maybe ^v.+
+	matchedv, err := regexp.MatchString("^v", passedParams.Github_tag)
+	if matchedv {
+		fmt.Println("The if worked to see if v was there.")
+		githubTagSlice := strings.SplitAfterN(passedParams.Github_tag, "v", 2)
+		folderName = passedParams.Github_reponame + "-" + githubTagSlice[1] + "/"
+	} else {
+		folderName = passedParams.Github_reponame + "-" + passedParams.Github_tag + "/"
+	}
+	// fmt.Println(folderName + "is the foldername *&***&&**")
 
 	//Final buffer will catch our new TarFile
 	finalBuffer := new(bytes.Buffer)
@@ -481,9 +504,8 @@ func ReaderForGithubTar(passedParams PassedParams) *bytes.Buffer {
 
 		//Regex will match the content in the folders path, and not the folder itself.
 		//Then we can copy the file into our new tar file.
-
-		matched, err := regexp.MatchString(folderName + ".+", hdr.Name)
-		if matched {
+		matchedFolder, err := regexp.MatchString(folderName + ".+", hdr.Name)
+		if matchedFolder {
 			unloadBuffer := new(bytes.Buffer)
 			_, err := io.Copy(unloadBuffer, tarReader)
 			if err != nil {
@@ -503,7 +525,7 @@ func ReaderForGithubTar(passedParams PassedParams) *bytes.Buffer {
 			}
 		}		
 	}
-	return finalBuffer
+	return finalBuffer, nil
 }
 
 //URL example = https://github.com/tutumcloud/docker-hello-world/archive/v1.0.tar.gz
