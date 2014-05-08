@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"encoding/base64"
 	"encoding/json"
-	"fmt"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/garyburd/redigo/redis"
 	"github.com/nu7hatch/gouuid"
@@ -207,7 +206,6 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	dockerConnection := httputil.NewClientConn(dockerDial, nil)
 	readerForInput, err := ReaderForInputType(passedParams, c, jobid)
 	if err != nil {
-		fmt.Println("readerForInput if worked.")
 		return
 	}
 	buildReq, err := http.NewRequest("POST", buildUrl, readerForInput)
@@ -237,7 +235,6 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 		//This if catches the error from docker and puts it in logs in the cache, then fails.
 		if stream.ErrorDetail.Message != "" {
 
-
 			buildLogsSlice := []byte(logsString)
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.ErrorDetail.Message)...)
 			logsString = string(buildLogsSlice)
@@ -253,7 +250,6 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 			buildLogsSlice = append(buildLogsSlice, []byte(stream.Stream)...)
 			logsString = string(buildLogsSlice)
 			c.Do("HSET", jobid, "logs", logsString)
-
 		}
 	}
 	
@@ -330,7 +326,7 @@ func StringEncAuth(passedParams PassedParams, serveraddress string) string {
 
 	jsonData, err := json.Marshal(data)
 	if err != nil {
-		fmt.Println("error:", err)
+		log.Println("error:", err)
 	}
 	sEnc := base64.StdEncoding.EncodeToString([]byte(jsonData))
 	return sEnc
@@ -364,7 +360,7 @@ func Dial() net.Conn {
 
 	dockerDial, err := net.Dial(docker_proto, docker_host)
 	if err != nil {
-		fmt.Println("Failed to reach docker")
+		log.Println("Failed to reach docker")
 		log.Fatal(err)
 	}
 
@@ -451,7 +447,6 @@ func ReaderForInputType(passedParams PassedParams, c redis.Conn, jobid string) (
 func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (*bytes.Buffer, error) {
 
 	url := "https://github.com/" + passedParams.Github_username + "/" + passedParams.Github_reponame + "/archive/" + passedParams.Github_tag + ".tar.gz"
-	fmt.Println(url)
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
@@ -459,7 +454,6 @@ func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (
 			log.Fatalln(err)
 		}
 	//Fail Gracefully  If the response is a 404 send that back.
-	fmt.Println(response.Status + "is the status.")
 	if response.Status == "404 Not Found" {
 		c.Do("HSET", jobid, "status", response.Status + " - Make sure the github repo and tag are correct.")
 		return nil, errors.New("Failed download from github.")
@@ -477,13 +471,11 @@ func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (
 	//Name of the folder created by github.  We use for Regex and renaiming.  maybe ^v.+
 	matchedv, err := regexp.MatchString("^v", passedParams.Github_tag)
 	if matchedv {
-		fmt.Println("The if worked to see if v was there.")
 		githubTagSlice := strings.SplitAfterN(passedParams.Github_tag, "v", 2)
 		folderName = passedParams.Github_reponame + "-" + githubTagSlice[1] + "/"
 	} else {
 		folderName = passedParams.Github_reponame + "-" + passedParams.Github_tag + "/"
 	}
-	// fmt.Println(folderName + "is the foldername *&***&&**")
 
 	//Final buffer will catch our new TarFile
 	finalBuffer := new(bytes.Buffer)
