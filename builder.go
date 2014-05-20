@@ -173,7 +173,14 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		c := RedisConnection()
 
 		//Set the status to building in the cache.
-		c.Do("HSET", jobid.JobIdentifier, "status", "Building")
+		n, err := c.Do("HSET", jobid.JobIdentifier, "status", "Building")
+		if n == 0 {
+			rest.Error(w, "Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
+		}
+		if err != nil {
+			rest.Error(w, " err trigg Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
+		}
+		c.Do("HSET", jobid.JobIdentifier, "logs", "Fetching logs...")
 
 		//Launch a goroutine to build, push, and delete.  Updates the cache as the process goes on.
 		//Also pass it the file that came from the CLI?

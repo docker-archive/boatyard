@@ -15,15 +15,32 @@
 
 
 <script>
-	$('#dockerfile').click(function (e) {
+
+
+
+$(document).ready(function(){
+	$('#tabcontrol a').click(function (e) {
 	  e.preventDefault()
 	  $(this).tab('show')
+	  $("#status").html("");
 	});
+});
 
 $(document).ready(function(){
 	$('#dockerfileButton').click(function() {
+		if ($("#image_name").val() == "") {
+			$("#status").html("Please enter an image name.");
+			return;
+		}
+		if ($("textarea#dockermessage").val() == "") {
+			$("#status").html("Please enter a dockerfile.");
+			return;
+		}
+		$("#slick-login").hide();
+		$(".logs-div").show();
 
 		$("#status").html("Starting Build");
+		$(".logs-div").html("Fetching logs...");
 
 		var data = {
 			image_name:$("#image_name").val(),
@@ -31,72 +48,190 @@ $(document).ready(function(){
 			password:$("#pass_word").val(),
 			dockerfile:$("textarea#dockermessage").val()
 		};
-		// $.post("http://127.0.0.1:8080/api/v1/build", JSON.stringify(request),
-  // 			function(data) {
-  // 				$("#status").html("Building");
-  // 				var response = jQuery.parseJSON(data);
-  // 				var jobid = response.JobIdentifier
-  //  				// alert("Data: " + data + "\nStatus: " + status);
-  //  		});
 
-   		    $.ajax({
-                type: "POST",
-                url: "/api/v1/build",
-                data: JSON.stringify(data),
-                dataType: 'json',
-                success: function(data) {
-					$("#status").html("Building");
-                },
-                error: function(jqXHR, textStatus, errorThrown) {
-                   $("#status").html("Error");
-                }
-            });
+		$.ajax({
+            type: "POST",
+            url: "/api/v1/build",
+            data: JSON.stringify(data),
+            dataType: 'json',
+            success: function(data) {
+				$("#status").html("Building");
+				var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
+				var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
+				var statusAndLogsChecker = setInterval(function () {   
+		   			$.ajax({
+					  	type: "GET",	
+					  	url: statusUrl,
+					  	success: function(data) {
+							$("#status").html(data.Status);
+							if (data.Status != "Building" && data.Status != "Pushing") {
+								clearInterval(statusAndLogsChecker);
+							}
+					    },
+					  	error: function(jqXHR, textStatus, errorThrown) {
+					        $("#status").html(errorThrown);	
+					    }
+					});
+					$.ajax({
+					  	type: "GET",	
+					  	url: logsUrl,
+					  	success: function(data) {
+							$(".logs-div").html(data.Logs);
+							var objDiv = document.getElementById("logs-div-id");
+							objDiv.scrollTop = objDiv.scrollHeight;
+					    },
+					  	error: function(jqXHR, textStatus, errorThrown) {
+							$(".logs-div").html(errorThrown);
+					    }
+					});
+	   			}, 1000);
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+              	$("#status").html(errorThrown);
+            }
+        });
+
+
 	});
 });
-	$('#github').click(function (e) {
-	  e.preventDefault()
-	  $(this).tab('show')
-	});
+
+
 
 $(document).ready(function(){
 	$('#githubButton').click(function (e) {
-		var request = {
+		if ($("#image_name").val() == "") {
+			$("#status").html("Please enter an image name.");
+			return;
+		}
+		if ($("#github_username").val() == "" || $("#github_reponame").val() == "" || $("#github_tag").val() == "" ) {
+			$("#status").html("Please provide the github information.");
+			return;
+		}
+
+		$("#slick-login").hide();
+		$(".logs-div").show();
+
+		$("#status").html("Starting Build");
+		$(".logs-div").html("Fetching logs...");
+
+		var data = {
 			image_name:$("#image_name").val(),
 			username:$("#user_name").val(),
 			password:$("#pass_word").val(),
-			github_username:$("github_username").val(),
-			github_reponame:$("github_reponame").val(),
-			github_tag:$("github_tag").val()
-
+			github_username:$("#github_username").val(),
+			github_reponame:$("#github_reponame").val(),
+			github_tag:$("#github_tag").val()
 		};
 
-	    $.ajax({
-	        type: "POST",
-	        url: "/api/v1/build",
-	        data: JSON.stringify(request),
-	        dataType: 'json',
-	        success: function(data) {
-	        	var jidstring = data.JobIdentifier
+		$.ajax({
+            type: "POST",
+            url: "/api/v1/build",
+            data: JSON.stringify(data),
+            dataType: 'json',
+            success: function(data) {
 				$("#status").html("Building");
-	        },
-	        error: function(jqXHR, textStatus, errorThrown) {
-	           $("#status").html("Error");
-	        }
-    	});
+				var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
+				var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
+				var statusAndLogsChecker = setInterval(function () {   
+		   			$.ajax({
+					  	type: "GET",	
+					  	url: statusUrl,
+					  	success: function(data) {
+							$("#status").html(data.Status);
+							if (data.Status != "Building" && data.Status != "Pushing") {
+								clearInterval(statusAndLogsChecker);
+							}
+					    },
+					  	error: function(jqXHR, textStatus, errorThrown) {
+					        $("#status").html(errorThrown);	
+					    }
+					});
+		   			$.ajax({
+					  	type: "GET",	
+					  	url: logsUrl,
+					  	success: function(data) {
+							$(".logs-div").html(data.Logs);
+							var objDiv = document.getElementById("logs-div-id");
+							objDiv.scrollTop = objDiv.scrollHeight;
+					    },
+					  	error: function(jqXHR, textStatus, errorThrown) {
+							$(".logs-div").html(errorThrown);
+					    }
+					});	
+	   			}, 1000);
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+               $("#status").html(errorThrown);
+            }
+        });
 	});
 });
 
-
-	$('#tarurl').click(function (e) {
-
-
-
-	});
 $(document).ready(function(){
 	$('#tarurlButton').click(function (e) {
-	 
+	if ($("#image_name").val() == "") {
+			$("#status").html("Please enter an image name.");
+			return;
+		}
+		if ($("#tarUrl").val() == "") {
+			$("#status").html("Please enter a tar url.");
+			return;
+		}
 
+		$("#slick-login").hide();
+		$(".logs-div").show();
 
+		$("#status").html("Starting Build");
+		$(".logs-div").html("Fetching logs...");
+
+		var data = {
+			image_name:$("#image_name").val(),
+			username:$("#user_name").val(),
+			password:$("#pass_word").val(),
+			tarUrl:$("#tarUrl").val()
+		};
+
+		$.ajax({
+            type: "POST",
+            url: "/api/v1/build",
+            data: JSON.stringify(data),
+            dataType: 'json',
+            success: function(data) {
+			$("#status").html("Building");
+				var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
+				var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
+				var statusAndLogsChecker = setInterval(function () {   
+		   			$.ajax({
+					  	type: "GET",	
+					  	url: statusUrl,
+					  	success: function(data) {
+							$("#status").html(data.Status);
+							if (data.Status != "Building" && data.Status != "Pushing") {
+								clearInterval(statusAndLogsChecker);
+							}
+					    },
+					  	error: function(jqXHR, textStatus, errorThrown) {
+					        $("#status").html(errorThrown);	
+					    }
+					});
+		   			$.ajax({
+					  	type: "GET",	
+					  	url: logsUrl,
+					  	success: function(data) {
+							$(".logs-div").html(data.Logs);
+							var objDiv = document.getElementById("logs-div-id");
+							objDiv.scrollTop = objDiv.scrollHeight;
+					    },
+					  	error: function(jqXHR, textStatus, errorThrown) {
+							$(".logs-div").html(errorThrown);
+					    }
+					});	
+	   			}, 1000);
+            },
+            error: function(jqXHR, textStatus, errorThrown) {
+               $("#status").html(errorThrown);
+            }
+        });	 
 	});
 });
 	</script>
@@ -104,63 +239,53 @@ $(document).ready(function(){
 
 
 	<body>
-	<div class="container">
+	<div class="boatyard-header">
+		<img class="cloud" src="css/cropped-cloud.png">
+	</div>
+
+	<div class="container" id="input-form">
 		<form id="slick-login">
-			<img class="cloud" src="css/cropped-cloud.png" align="middle">
-			<input type="text" name="username" class="form-control" placeholder="Image Repository Username" id="user_name">
-			<input type="text" name="imagename" class="form-control" placeholder="Image Name" id="image_name">
+			<input type="text" name="imagename" class="form-control" placeholder="Image Name" id="image_name" required>
+			<input type="text" name="username" class="form-control" placeholder="Username" id="user_name">
 			<input type="password" name="password" class="form-control" placeholder="Password" id="pass_word">
 
-					<!-- Nav tabs -->
-		<ul class="nav nav-tabs nav-pills" id="tabcontrol">
-		  <li class="active"><a href="#dockerfile" data-toggle="tab">Dockerfile</a></li>
-		  <li><a href="#github" data-toggle="tab">Github</a></li>
-		  <li><a href="#tarurl" data-toggle="tab">Tar Url</a></li>
-		</ul>
+			<!-- Nav tabs -->
+			<ul class="nav nav-tabs nav-pills" id="tabcontrol">
+			  <li class="active"><a href="#dockerfile" data-toggle="tab">Dockerfile</a></li>
+			  <li><a href="#github" data-toggle="tab">Github</a></li>
+			  <li><a href="#tarurl" data-toggle="tab">Tar Url</a></li>
+			</ul>
 
-		<!-- Tab panes -->
-		<div class="tab-content">
-		  <div class="tab-pane active" id="dockerfile">
-				<textarea type="text" name="dockermessage" class="form-control" placeholder="Dockerfile" wrap="off" id="dockermessage"></textarea>
-				<button class="btn btn-primary btn-large" id="dockerfileButton" type="button">Submit</button>
+			<!-- Tab panes -->
+			<div class="tab-content">
+				<div class="tab-pane active" id="dockerfile">
+					<textarea type="text" name="dockermessage" class="form-control" placeholder="Dockerfile" wrap="off" id="dockermessage"></textarea>
+					<button class="btn btn-primary btn-large" id="dockerfileButton" type="button">Submit</button>
+			  	</div>
 
-		  </div>
-		  <div class="tab-pane" id="github">
-		  	<input type="text" name="GHUsername" class="form-control" placeholder="Github Username" id="github_username">
-			<input type="text" name="GHRepoName" class="form-control" placeholder="Github Repository Name" id="github_reponame">
-			<input type="text" name="GHTagName" class="form-control" placeholder="Github Tag Name" id="github_tag">
-		  	<button class="btn btn-primary btn-large" id="githubButton" type="button">Submit</button>
-		  </div>
-		  <div class="tab-pane" id="tarurl">
-		  	<input type="text" name="Tarurl" class="form-control" placeholder="Tar Url">
-		  	<button class="btn btn-primary btn-large" id="tarurlButton" type="button">Submit</button>
-		  	
-		  </div>
+				<div class="tab-pane" id="github">
+				  	<input type="text" name="GHUsername" class="form-control" placeholder="Github Username" id="github_username">
+					<input type="text" name="GHRepoName" class="form-control" placeholder="Github Repository Name" id="github_reponame">
+					<input type="text" name="GHTagName" class="form-control" placeholder="Github Tag Name" id="github_tag">
+				  	<button class="btn btn-primary btn-large" id="githubButton" type="button">Submit</button>
+				</div>
 
-		</div>
-	<!-- status -->
-
-		<p id="status">
-			Status	
-		</p>
-
-<!-- 		<div id="progress" class="container">
-			<progress></progress>
-		</div> -->
-
-	
-
-
+			  	<div class="tab-pane" id="tarurl">
+			  		<input type="text" name="Tarurl" class="form-control" placeholder="Tar Url" id ="tarUrl">
+			  		<button class="btn btn-primary btn-large" id="tarurlButton" type="button">Submit</button>
+			  	</div>
+			</div>
 		</form>
 
-	
+		<div class="logs-div" id="logs-div-id">
+		</div>
+	</div>
 
-
+	<div class="status-div" >			
+		<p id="status"></p>
+	</div>
 
 	</body>
-
-
-
 </html>
 
 
