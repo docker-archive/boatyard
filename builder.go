@@ -2,38 +2,38 @@ package main
 
 import (
 	"archive/tar"
+	"bufio"
 	"bytes"
+	"compress/gzip"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/garyburd/redigo/redis"
 	"github.com/nu7hatch/gouuid"
-	"bufio"
-	"log"
-	"net/http"
-	"os"
-	"strings"
-	"net/http/httputil"
-	"net"
 	"io"
 	"io/ioutil"
+	"log"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"os"
 	"regexp"
-	"compress/gzip"
-	"errors"
-
+	"strings"
 )
 
 type PassedParams struct {
-	Image_name string
-	Username   string
-	Password   string
-	Email      string
-	Dockerfile string
-	TarUrl 	   string
-	TarFile    []byte
+	Image_name      string
+	Username        string
+	Password        string
+	Email           string
+	Dockerfile      string
+	TarUrl          string
+	TarFile         []byte
 	Github_username string
 	Github_reponame string
-	Github_tag string
+	Github_tag      string
 }
 
 type PushAuth struct {
@@ -57,12 +57,12 @@ type JobLogs struct {
 
 type StreamCatcher struct {
 	ErrorDetail ErrorCatcher `json:"errorDetail"`
-	Stream      string `json:"stream"`
+	Stream      string       `json:"stream"`
 }
 
 type ErrorCatcher struct {
-	Message 	string `json:"message"`
-	Error 		string `json:"error"`
+	Message string `json:"message"`
+	Error   string `json:"error"`
 }
 
 func main() {
@@ -97,7 +97,7 @@ func GetStatusForJobID(w rest.ResponseWriter, r *rest.Request) {
 	defer c.Close()
 
 	//First check if the key and field exist.
-	exists, err := redis.Bool(c.Do("HEXISTS", jobid, "status")) 
+	exists, err := redis.Bool(c.Do("HEXISTS", jobid, "status"))
 	if exists == true {
 		var status JobStatus
 		status.Status, err = redis.String(c.Do("HGET", jobid, "status"))
@@ -109,8 +109,6 @@ func GetStatusForJobID(w rest.ResponseWriter, r *rest.Request) {
 		rest.Error(w, "Jobid doesn't exist in the cache.  Bad request.", 404)
 	}
 }
-
-
 
 //3 steps.  Unpack the jobId that came in.  Open the redis connection and get the logs.  Then write the logs back.
 func GetLogsForJobID(w rest.ResponseWriter, r *rest.Request) {
@@ -140,7 +138,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 	passedParams := PassedParams{}
 
 	//If the Content-Type is multipart, parse it.  Otherwise unpack the json.
-	if strings.Contains(r.Header.Get("Content-Type"), "multipart") == true { 
+	if strings.Contains(r.Header.Get("Content-Type"), "multipart") == true {
 
 		form, err := r.MultipartReader()
 		TarPart, err := form.NextPart()
@@ -151,6 +149,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		err = json.Unmarshal(JsonData, &passedParams)
 		if err != nil {
 			rest.Error(w, err.Error(), 400)
+			return
 		}
 		passedParams.TarFile = TarData
 
@@ -161,6 +160,8 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 			rest.Error(w, err.Error(), 400)
 			return
 		}
+		fmt.Println(passedParams)
+		fmt.Println(passedParams.Dockerfile + "is the dockefile")
 	}
 
 	if Validate(passedParams) {
@@ -172,19 +173,27 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		c := RedisConnection()
 
 		//Set the status to building in the cache.
-		c.Do("HSET", jobid.JobIdentifier, "status", "Building")
+		n, err := c.Do("HSET", jobid.JobIdentifier, "status", "Building")
+		if n == 0 {
+			rest.Error(w, "Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
+		}
+		if err != nil {
+			rest.Error(w, " err trigg Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
+		}
+		c.Do("HSET", jobid.JobIdentifier, "logs", "Fetching logs...")
 
 		//Launch a goroutine to build, push, and delete.  Updates the cache as the process goes on.
 		//Also pass it the file that came from the CLI?
 		go BuildPushAndDeleteImage(jobid.JobIdentifier, passedParams, c)
 
 		//Write the jobid back
+		fmt.Println("Makes it to the write.")
+		fmt.Println(jobid.JobIdentifier)
 		w.WriteJson(jobid)
 	} else {
 		//Params didn't validate.  Bad Request.
 		rest.Error(w, "Insufficient Information.  Must provide at least an Image Name and a Dockerfile/Tarurl.", 400)
 	}
-
 
 }
 
@@ -209,9 +218,9 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 		return
 	}
 	buildReq, err := http.NewRequest("POST", buildUrl, readerForInput)
-    buildResponse, err := dockerConnection.Do(buildReq)
+	buildResponse, err := dockerConnection.Do(buildReq)
 
-    defer buildResponse.Body.Close()
+	defer buildResponse.Body.Close()
 	buildReader := bufio.NewReader(buildResponse.Body)
 	if err != nil {
 		c.Do("HSET", jobid, "status", err)
@@ -252,7 +261,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 			c.Do("HSET", jobid, "logs", logsString)
 		}
 	}
-	
+
 	//Update status in the cache, then start the push process.
 	c.Do("HSET", jobid, "status", "Pushing")
 
@@ -260,7 +269,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	// pushConnection := httputil.NewClientConn(dockerDial, nil)
 	pushReq, err := http.NewRequest("POST", pushUrl, nil)
 	pushReq.Header.Add("X-Registry-Auth", StringEncAuth(passedParams, ServerAddress(splitImageName[0])))
-    pushResponse, err := dockerConnection.Do(pushReq)
+	pushResponse, err := dockerConnection.Do(pushReq)
 	pushReader := bufio.NewReader(pushResponse.Body)
 	if err != nil {
 		c.Do("HSET", jobid, "status", err)
@@ -296,22 +305,22 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	c.Do("HSET", jobid, "status", "Finished")
 	c.Close()
 
-	//Delete it from the docker node.  Save space.  
+	//Delete it from the docker node.  Save space.
 	deleteUrl := ("/v1.10/images/" + passedParams.Image_name)
 	deleteReq, err := http.NewRequest("DELETE", deleteUrl, nil)
-    dockerConnection.Do(deleteReq)
+	dockerConnection.Do(deleteReq)
 	dockerConnection.Close()
 }
 
 func Validate(passedParams PassedParams) bool {
-//Must have an image name and either a Dockerfile or TarUrl.
+	//Must have an image name and either a Dockerfile or TarUrl.
 	switch {
-		case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil && passedParams.Github_reponame == "": 
-			return false
-		case passedParams.Image_name == "": 
-			return false
-		default:
-			return true
+	case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil && passedParams.Github_reponame == "":
+		return false
+	case passedParams.Image_name == "":
+		return false
+	default:
+		return true
 	}
 }
 
@@ -343,7 +352,6 @@ func DockerNode() string {
 	}
 	return docker_node
 }
-
 
 func Dial() net.Conn {
 	var docker_proto string
@@ -430,17 +438,17 @@ func ReaderForInputType(passedParams PassedParams, c redis.Conn, jobid string) (
 
 	//Use a switch.  one case for Dockerfile, one for TarUrl, one for Tarfile from client?
 	switch {
-		case passedParams.Dockerfile != "": 
-			return ReaderForDockerfile(passedParams.Dockerfile), nil
-		case passedParams.TarFile  != nil: 
-			return bytes.NewReader(passedParams.TarFile), nil
-		case passedParams.TarUrl != "":
-			return ReaderForTarUrl(passedParams.TarUrl), nil
-		case passedParams.Github_tag != "" && passedParams.Github_username != "" && passedParams.Github_reponame != "":
-			return ReaderForGithubTar(passedParams, c, jobid)
-		default:
-			return nil, errors.New("Failed in the ReaderForInputType.  Got to default")
-		}
+	case passedParams.Dockerfile != "":
+		return ReaderForDockerfile(passedParams.Dockerfile), nil
+	case passedParams.TarFile != nil:
+		return bytes.NewReader(passedParams.TarFile), nil
+	case passedParams.TarUrl != "":
+		return ReaderForTarUrl(passedParams.TarUrl), nil
+	case passedParams.Github_tag != "" && passedParams.Github_username != "" && passedParams.Github_reponame != "":
+		return ReaderForGithubTar(passedParams, c, jobid)
+	default:
+		return nil, errors.New("Failed in the ReaderForInputType.  Got to default")
+	}
 
 }
 
@@ -451,14 +459,14 @@ func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
 	if err != nil {
-			log.Fatalln(err)
-		}
+		log.Fatalln(err)
+	}
 	//Fail Gracefully  If the response is a 404 send that back.
 	if response.Status == "404 Not Found" {
-		c.Do("HSET", jobid, "status", response.Status + " - Make sure the github repo and tag are correct.")
+		c.Do("HSET", jobid, "status", response.Status+" - Make sure the github repo and tag are correct.")
 		return nil, errors.New("Failed download from github.")
 	}
-	contents, err :=  ioutil.ReadAll(response.Body)
+	contents, err := ioutil.ReadAll(response.Body)
 
 	//Now let's unzip it.
 	zippedBytesReader := bytes.NewReader(contents)
@@ -496,7 +504,7 @@ func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (
 
 		//Regex will match the content in the folders path, and not the folder itself.
 		//Then we can copy the file into our new tar file.
-		matchedFolder, err := regexp.MatchString(folderName + ".+", hdr.Name)
+		matchedFolder, err := regexp.MatchString(folderName+".+", hdr.Name)
 		if matchedFolder {
 			unloadBuffer := new(bytes.Buffer)
 			_, err := io.Copy(unloadBuffer, tarReader)
@@ -515,7 +523,7 @@ func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (
 			if _, err := tarWriter.Write(unloadBuffer.Bytes()); err != nil {
 				log.Println(err)
 			}
-		}		
+		}
 	}
 	return finalBuffer, nil
 }
@@ -527,12 +535,11 @@ func ReaderForTarUrl(url string) io.ReadCloser {
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
 	if err != nil {
-			log.Fatalln(err)
-		}
+		log.Fatalln(err)
+	}
 	return response.Body
 
 }
-
 
 func ReaderForDockerfile(dockerfile string) *bytes.Buffer {
 
