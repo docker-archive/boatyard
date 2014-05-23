@@ -175,7 +175,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		//Set the status to building in the cache.
 		n, err := c.Do("HSET", jobid.JobIdentifier, "status", "Building")
 		if n == 0 {
-			rest.Error(w, "Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
+			rest.Error(w, "Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 501)
 		}
 		if err != nil {
 			rest.Error(w, " err trigg Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
