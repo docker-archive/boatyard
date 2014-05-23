@@ -43,9 +43,17 @@ table {
 
 
 .cloud{
+
+	text-align: center;
 	margin:0 auto;
 	display: block;
+	padding-top: 25px;
+	padding-bottom: 50px;
+	color: #0099FF;
+	font-size: 40px;
+	font-family:Tahoma, Geneva, sans-serif;
 }
+
 
 
 .btn{
