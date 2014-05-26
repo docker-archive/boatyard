@@ -1,42 +1,85 @@
-A Go web service for building, pushing, and purging docker images.
+A Go web service which provides a HTTP API and a web UI for building, pushing, and deleting docker images.
 
-# **Running**
+# Running
 
-With docker and fig installed, simply run fig up tutum-builder.
+With docker and fig installed, and with docker listening in `tcp://localhost:4243`, simply run:
 
-# **Usage**
+	fig up -d
 
-* The POST request builds an image in a docker instance, pushes it to a repository, then purges the image from the docker instance.  
-* The Request requires an image_name and either a docker file or a tarUrl.  
-* Username, password, and email are not necessarily required (private repos could be configured this way).  
-* In order to push to a private repo the image_name should be of the form private.repo/namespace/image.  
-* The tar file must have a dockerfile in the top level contents.
+Run `docker ps` and check the allocated port for boatyard. Then point your browser to `http://localhost:49XXX/` to open the web UI.
 
-**Json Requests:**
+# Configuration options
+
+You can specify any of the following environment variables in the fig.yml to configure it:
+
+* `DOCKER_HOST` (default: `tcp://localhost:4243`): the endpoint where a Docker server is listening to
+* `CACHE_1_PORT_6379_TCP_ADDR` (default: none): the hostname to connect to a Redis cache
+* `CACHE_1_PORT_6379_TCP_PORT` (default: `6379`): the port to connect to a Redis cache
+* `CACHE_PASSWORD` (default: none): an optional password to authenticate with the Redis cache
+
+# Usage
+
+The primary inputs to create an image are:
+
+* Image name (i.e. `user/myimage`)
+* Username (to be used when pushing, i.e. `user`)
+* Password (to be used when pushing, i.e. `password`)
+* Email (to be used when pushing, i.e. `user@example.com`)
+
+Any of the following inputs can be passed to **boatyard** to create the image:
+
+* A `Dockerfile`
+* A URL to a tarball containing a `Dockerfile` on the root folder and any required files
+* A GitHub repository (combination of GitHub username, repo name and tag)
+* A tarball sent as part of the request
+
+# API specification
+
+## Building
+
+### Requests
+
+From `Dockerfile`:
 
 	POST /api/v1/build
-	{
-	"image_name": "namespace/image",
-	"username": "user",
-	"password": "password",
-	"email": "asdasd@gmail.com",
-	"dockerfile": "FROM ubuntu:saucy\nCMD echo \"Hello world\""
-	}
-	
-	POST /api/v1/build
-	{
-	"image_name": "namespace/image",
-	"username": "user",
-	"password": "password",
-	"email": "asdasd@gmail.com",
-	"tarUrl": "tarmusthaveadockerfile.com/files/hello-	world.tar.gz"
-	}
-	
-**Multipart Request:**
 
-	POST /api/v1/build HTTP/1.1
-	Host: 127.0.0.1:8080
-	Cache-Control: no-cache
+	{
+		"image_name": "user/image",
+		"username": "user",
+		"password": "password",
+		"email": "user@example.com",
+		"dockerfile": "FROM ubuntu:saucy\nCMD echo \"Hello world\""
+	}
+
+From a tarball URL:
+
+	POST /api/v1/build
+
+	{
+		"image_name": "user/image",
+		"username": "user",
+		"password": "password",
+		"email": "user@example.com",
+		"tar_url": "https://github.com/tutumcloud/docker-hello-world/archive/v1.0.tar.gz"
+	}
+
+From GitHub repository:
+
+	POST /api/v1/build
+
+	{
+		"image_name": "user/image",
+		"username": "user",
+		"password": "password",
+		"email": "user@example.com",
+		"github_username": "tutumcloud",
+		"github_reponame": "docker-hello-world",
+		"github_tag": "v1.0"
+	}
+
+From a tarball sent with the request:
+
+	POST /api/v1/build
 	
 	----WebKitFormBoundaryE19zNvXGzXaLvS5C
 	Content-Disposition: form-data; name="TarFile"; filename="dockertarexample.tar.gz"
@@ -44,57 +87,62 @@ With docker and fig installed, simply run fig up tutum-builder.
 	
 	
 	----WebKitFormBoundaryE19zNvXGzXaLvS5C
-	Content-Disposition: form-data; name="Json"; filename="postmantest.json"
+	Content-Disposition: form-data; name="Json"; filename="manifest.json"
 	Content-Type: application/json
 	
 	
 	----WebKitFormBoundaryE19zNvXGzXaLvS5C	
 		
-	Where postmantest.json has the following format. 
+Where manifest.json has the following format. 
+
 	{
-	"image_name": "namespace/image",
-	"username": "user",
-	"password": "password",
-	"email": "asdasd@gmail.com"
+		"image_name": "user/image",
+		"username": "user",
+		"password": "password",
+		"email": "user@example.com"
 	}
 	
 
-**Response:**
+### Response
 
 	{
-	"JobIdentifier": "ef0c7a10-31a5-4140-6087-df97c2bebcb2"
+		"JobIdentifier": "ef0c7a10-31a5-4140-6087-df97c2bebcb2"
 	}
 
-The JobIdentifier can be used to check the status and logs in a redis cache with the following GET requests.
+The `JobIdentifier` can be used to check the status and logs with the following GET requests.
 
-**Request:**
+## Checking job status
+
+### Request
+
+Issue the following request:
 
 	GET /api/v1/:jobid/status
 
-**Response:**
+where `:jobid` is the job ID returned in the build request (i.e. `ef0c7a10-31a5-4140-6087-df97c2bebcb2`)
+
+### Response
 
 	{
-	  "Status": "Status is returned as a string."
+		"Status": "Pushing"
 	}
 
-The status will catch errors, and on a successful call the job status has three stages, "Building", "Pushing", and "Finished".
+The status will show errors, and on a successful call the job status has three stages: "Building", "Pushing", and "Finished".
 
+## Checking job logs
 
-**Request:**
-	
+### Request
+
+Issue the following request:
+
 	GET /api/v1/:jobid/logs
 
-**Response:**
+where `:jobid` is the job ID returned in the build request (i.e. `ef0c7a10-31a5-4140-6087-df97c2bebcb2`)
+
+### Response
 	
 	{
- 	 "Logs": "Logs are returned as one string."
+ 		"Logs": "Logs are returned as one string."
 	}
 	
-The Logs catches the build logs and any errors returned from the docker node. 
-
-
-# **Environment Variables**
-
-* The builder will use the local DOCKER_HOST with a default to http://127.0.0.1:4243 
-* The builder will connect to the redis cache at CACHE_1_PORT_6379_TCP_ADDR + ":" + CACHE_1_PORT_6379_TCP_PORT with a default to :6379
-* The builder will listen and serve at PORT with a default to :8080
+The logs catch the build logs and any errors returned from the docker host. 
