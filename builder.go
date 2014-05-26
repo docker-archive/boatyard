@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"github.com/ant0ine/go-json-rest/rest"
 	"github.com/garyburd/redigo/redis"
 	"github.com/nu7hatch/gouuid"
@@ -29,7 +28,7 @@ type PassedParams struct {
 	Password        string
 	Email           string
 	Dockerfile      string
-	TarUrl          string
+	Tar_url         string
 	TarFile         []byte
 	Github_username string
 	Github_reponame string
@@ -160,8 +159,6 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 			rest.Error(w, err.Error(), 400)
 			return
 		}
-		fmt.Println(passedParams)
-		fmt.Println(passedParams.Dockerfile + "is the dockefile")
 	}
 
 	if Validate(passedParams) {
@@ -187,8 +184,6 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		go BuildPushAndDeleteImage(jobid.JobIdentifier, passedParams, c)
 
 		//Write the jobid back
-		fmt.Println("Makes it to the write.")
-		fmt.Println(jobid.JobIdentifier)
 		w.WriteJson(jobid)
 	} else {
 		//Params didn't validate.  Bad Request.
@@ -208,7 +203,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	}
 
 	//Create the post request to build.  Query Param t=image name is the tag.
-	buildUrl := ("/v1.10/build?t=" + passedParams.Image_name)
+	buildUrl := ("/v1.10/build?nocache=true&t=" + passedParams.Image_name)
 
 	//Open connection to docker and build.  The request will depend on whether a dockerfile was passed or a url to a zip.
 	dockerDial := Dial()
@@ -315,7 +310,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 func Validate(passedParams PassedParams) bool {
 	//Must have an image name and either a Dockerfile or TarUrl.
 	switch {
-	case passedParams.Dockerfile == "" && passedParams.TarUrl == "" && passedParams.TarFile == nil && passedParams.Github_reponame == "":
+	case passedParams.Dockerfile == "" && passedParams.Tar_url == "" && passedParams.TarFile == nil && passedParams.Github_reponame == "":
 		return false
 	case passedParams.Image_name == "":
 		return false
@@ -442,8 +437,8 @@ func ReaderForInputType(passedParams PassedParams, c redis.Conn, jobid string) (
 		return ReaderForDockerfile(passedParams.Dockerfile), nil
 	case passedParams.TarFile != nil:
 		return bytes.NewReader(passedParams.TarFile), nil
-	case passedParams.TarUrl != "":
-		return ReaderForTarUrl(passedParams.TarUrl), nil
+	case passedParams.Tar_url != "":
+		return ReaderForTarUrl(passedParams.Tar_url), nil
 	case passedParams.Github_tag != "" && passedParams.Github_username != "" && passedParams.Github_reponame != "":
 		return ReaderForGithubTar(passedParams, c, jobid)
 	default:

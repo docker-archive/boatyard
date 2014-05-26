@@ -1,292 +1,240 @@
 <!DOCTYPE html>
 <head>
-<meta charset="utf-8">
-<link href="css/bootstrap.css" rel="stylesheet" type="text/css" />
-<link href="css/bootstrap.min.css" rel="stylesheet" type="text/css" />
-<link rel="stylesheet" type="text/css" href="css/style.css" />
-<link href='http://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+    <meta charset="utf-8">
+    <title>boatyard</title>
+    <link href="css/bootstrap.css" rel="stylesheet" type="text/css" />
+    <link href="css/bootstrap.min.css" rel="stylesheet" type="text/css" />
+    <link rel="stylesheet" type="text/css" href="css/style.css" />
+    <link href='https://fonts.googleapis.com/css?family=Open+Sans' rel='stylesheet' type='text/css'>
+    <link href="https://netdna.bootstrapcdn.com/font-awesome/4.1.0/css/font-awesome.min.css" rel="stylesheet">
 
 
-
-<!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
-<script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
-<!-- Include all compiled plugins (below), or include individual files as needed -->
-<script src="js/bootstrap.min.js"></script>
-
-
-<script>
+    <!-- jQuery (necessary for Bootstrap's JavaScript plugins) -->
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/1.11.0/jquery.min.js"></script>
+    <!-- Include all compiled plugins (below), or include individual files as needed -->
+    <script src="js/bootstrap.min.js"></script>
 
 
+    <script>
+    var statusAndLogsChecker = null;
 
-$(document).ready(function(){
-	$('#tabcontrol a').click(function (e) {
-	  e.preventDefault()
-	  $(this).tab('show')
-	  $("#status").html("");
-	});
-});
+    function get_error_msg(msg) {
+        return "<span class=\"red\"><i class=\"fa fa-warning\"></i> " + msg + "</span>";
+    }
 
-$(document).ready(function(){
-	$('#dockerfileButton').click(function() {
-		if ($("#image_name").val() == "") {
-			$("#status").html("Please enter an image name.");
-			return;
-		}
-		if ($("textarea#dockermessage").val() == "") {
-			$("#status").html("Please enter a dockerfile.");
-			return;
-		}
-		$("#slick-login").hide();
-		$(".logs-div").show();
+    function get_success_msg(msg) {
+        return "<span class=\"green\"><i class=\"fa fa-check\"></i> " + msg + "</span>";
+    }
 
-		$("#status").html("Starting Build");
-		$(".logs-div").html("Fetching logs...");
+    function get_in_progress_msg(msg) {
+        return "<span class=\"green\"><i class=\"fa fa-cog fa-spin\"></i> " + msg + "</span>";
+    }
 
-		var data = {
-			image_name:$("#image_name").val(),
-			username:$("#user_name").val(),
-			password:$("#pass_word").val(),
-			dockerfile:$("textarea#dockermessage").val()
-		};
-
-		$.ajax({
-            type: "POST",
-            url: "/api/v1/build",
-            data: JSON.stringify(data),
-            dataType: 'json',
+    function update_logs(url) {
+        $.ajax({
+            type: "GET",    
+            url: url,
             success: function(data) {
-				$("#status").html("Building");
-				var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
-				var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
-				var statusAndLogsChecker = setInterval(function () {   
-		   			$.ajax({
-					  	type: "GET",	
-					  	url: statusUrl,
-					  	success: function(data) {
-							$("#status").html(data.Status);
-							if (data.Status != "Building" && data.Status != "Pushing") {
-								clearInterval(statusAndLogsChecker);
-							}
-					    },
-					  	error: function(jqXHR, textStatus, errorThrown) {
-					        $("#status").html(errorThrown);	
-					    }
-					});
-					$.ajax({
-					  	type: "GET",	
-					  	url: logsUrl,
-					  	success: function(data) {
-							$(".logs-div").html(data.Logs);
-							var objDiv = document.getElementById("logs-div-id");
-							objDiv.scrollTop = objDiv.scrollHeight;
-					    },
-					  	error: function(jqXHR, textStatus, errorThrown) {
-							$(".logs-div").html(errorThrown);
-					    }
-					});
-	   			}, 1000);
+                $(".logs-div").html(data.Logs.replaceAll("\n", "<br />"));
+                var objDiv = document.getElementById("logs-div-id");
+                objDiv.scrollTop = objDiv.scrollHeight;
             },
             error: function(jqXHR, textStatus, errorThrown) {
-              	$("#status").html(errorThrown);
+                $(".logs-div").html(errorThrown);
             }
         });
+    }
 
-
-	});
-});
-
-
-
-$(document).ready(function(){
-	$('#githubButton').click(function (e) {
-		if ($("#image_name").val() == "") {
-			$("#status").html("Please enter an image name.");
-			return;
-		}
-		if ($("#github_username").val() == "" || $("#github_reponame").val() == "" || $("#github_tag").val() == "" ) {
-			$("#status").html("Please provide the github information.");
-			return;
-		}
-
-		$("#slick-login").hide();
-		$(".logs-div").show();
-
-		$("#status").html("Starting Build");
-		$(".logs-div").html("Fetching logs...");
-
-		var data = {
-			image_name:$("#image_name").val(),
-			username:$("#user_name").val(),
-			password:$("#pass_word").val(),
-			github_username:$("#github_username").val(),
-			github_reponame:$("#github_reponame").val(),
-			github_tag:$("#github_tag").val()
-		};
-
-		$.ajax({
-            type: "POST",
-            url: "/api/v1/build",
-            data: JSON.stringify(data),
-            dataType: 'json',
+    function update_status(url) {
+        $.ajax({
+            type: "GET",    
+            url: url,
             success: function(data) {
-				$("#status").html("Building");
-				var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
-				var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
-				var statusAndLogsChecker = setInterval(function () {   
-		   			$.ajax({
-					  	type: "GET",	
-					  	url: statusUrl,
-					  	success: function(data) {
-							$("#status").html(data.Status);
-							if (data.Status != "Building" && data.Status != "Pushing") {
-								clearInterval(statusAndLogsChecker);
-							}
-					    },
-					  	error: function(jqXHR, textStatus, errorThrown) {
-					        $("#status").html(errorThrown);	
-					    }
-					});
-		   			$.ajax({
-					  	type: "GET",	
-					  	url: logsUrl,
-					  	success: function(data) {
-							$(".logs-div").html(data.Logs);
-							var objDiv = document.getElementById("logs-div-id");
-							objDiv.scrollTop = objDiv.scrollHeight;
-					    },
-					  	error: function(jqXHR, textStatus, errorThrown) {
-							$(".logs-div").html(errorThrown);
-					    }
-					});	
-	   			}, 1000);
+                if (data.Status != "Building" && data.Status != "Pushing") {
+                    if (data.Status == "Finished") {
+                        $("#status").html(get_success_msg(data.Status));
+                    }
+                    else
+                    {
+                        $("#status").html(get_error_msg(data.Status));
+                    }
+                    clearInterval(statusAndLogsChecker);
+                }
+                else {
+                    $("#status").html(get_in_progress_msg(data.Status));
+                }
             },
             error: function(jqXHR, textStatus, errorThrown) {
-               $("#status").html(errorThrown);
+                $("#status").html(get_error_msg(errorThrown)); 
             }
         });
-	});
-});
+    }
 
-$(document).ready(function(){
-	$('#tarurlButton').click(function (e) {
-	if ($("#image_name").val() == "") {
-			$("#status").html("Please enter an image name.");
-			return;
-		}
-		if ($("#tarUrl").val() == "") {
-			$("#status").html("Please enter a tar url.");
-			return;
-		}
-
-		$("#slick-login").hide();
-		$(".logs-div").show();
-
-		$("#status").html("Starting Build");
-		$(".logs-div").html("Fetching logs...");
-
-		var data = {
-			image_name:$("#image_name").val(),
-			username:$("#user_name").val(),
-			password:$("#pass_word").val(),
-			tarUrl:$("#tarUrl").val()
-		};
-
-		$.ajax({
+    function post_build(data) {
+        $.ajax({
             type: "POST",
             url: "/api/v1/build",
             data: JSON.stringify(data),
             dataType: 'json',
             success: function(data) {
-			$("#status").html("Building");
-				var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
-				var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
-				var statusAndLogsChecker = setInterval(function () {   
-		   			$.ajax({
-					  	type: "GET",	
-					  	url: statusUrl,
-					  	success: function(data) {
-							$("#status").html(data.Status);
-							if (data.Status != "Building" && data.Status != "Pushing") {
-								clearInterval(statusAndLogsChecker);
-							}
-					    },
-					  	error: function(jqXHR, textStatus, errorThrown) {
-					        $("#status").html(errorThrown);	
-					    }
-					});
-		   			$.ajax({
-					  	type: "GET",	
-					  	url: logsUrl,
-					  	success: function(data) {
-							$(".logs-div").html(data.Logs);
-							var objDiv = document.getElementById("logs-div-id");
-							objDiv.scrollTop = objDiv.scrollHeight;
-					    },
-					  	error: function(jqXHR, textStatus, errorThrown) {
-							$(".logs-div").html(errorThrown);
-					    }
-					});	
-	   			}, 1000);
+                $("#status").html(get_in_progress_msg("Building"));
+                var statusUrl = "api/v1/" + data.JobIdentifier + "/status"
+                var logsUrl = "api/v1/" + data.JobIdentifier + "/logs"
+                statusAndLogsChecker = setInterval(function () {   
+                    update_status(statusUrl);
+                    update_logs(logsUrl);
+                }, 1000);
             },
             error: function(jqXHR, textStatus, errorThrown) {
-               $("#status").html(errorThrown);
+               $("#status").html(get_error_msg(errorThrown));
             }
-        });	 
-	});
-});
-	</script>
+        });
+    }
+
+    $(document).ready(function(){
+        $('#tabcontrol a').click(function (e) {
+          e.preventDefault()
+          $(this).tab('show')
+          $("#status").html("");
+        });
+
+        $('#dockerfileButton').click(function() {
+            if ($("#image_name").val() == "") {
+                $("#status").html(get_error_msg("Please enter an image name"));
+                return;
+            }
+            if ($("textarea#dockermessage").val() == "") {
+                $("#status").html(get_error_msg("Please enter a Dockerfile"));
+                return;
+            }
+            $("#slick-login").hide();
+            $(".logs-div").show();
+
+            $("#status").html(get_in_progress_msg("Starting build"));
+
+            var data = {
+                image_name:$("#image_name").val(),
+                username:$("#user_name").val(),
+                password:$("#pass_word").val(),
+                dockerfile:$("textarea#dockermessage").val()
+            };
+            post_build(data);
+        });
+
+        $('#githubButton').click(function (e) {
+            if ($("#image_name").val() == "") {
+                $("#status").html(get_error_msg("Please enter an image name"));
+                return;
+            }
+            if ($("#github_username").val() == "" || $("#github_reponame").val() == "" || $("#github_tag").val() == "" ) {
+                $("#status").html(get_error_msg("Please provide the github information"));
+                return;
+            }
+
+            $("#slick-login").hide();
+            $(".logs-div").show();
+
+            $("#status").html(get_in_progress_msg("Starting build"));
+
+            var data = {
+                image_name:$("#image_name").val(),
+                username:$("#user_name").val(),
+                password:$("#pass_word").val(),
+                github_username:$("#github_username").val(),
+                github_reponame:$("#github_reponame").val(),
+                github_tag:$("#github_tag").val()
+            };
+            post_build(data);
+        });
+
+        $('#tarurlButton').click(function (e) {
+            if ($("#image_name").val() == "") {
+                $("#status").html(get_error_msg("Please enter an image name"));
+                return;
+            }
+            if ($("#tarUrl").val() == "") {
+                $("#status").html(get_error_msg("Please enter a tarball URL"));
+                return;
+            }
+
+            $("#slick-login").hide();
+            $(".logs-div").show();
+
+            $("#status").html(get_in_progress_msg("Starting build"));
+
+            var data = {
+                image_name:$("#image_name").val(),
+                username:$("#user_name").val(),
+                password:$("#pass_word").val(),
+                tar_url:$("#tarUrl").val()
+            };
+            post_build(data);
+        });
+
+        if(window.location.host == "boatyard.io") {
+            $(".hosting-notice").show();
+        }
+    });
+    </script>
 </head>
 
 
-	<body>
-	<div class="boatyard">
-		<span >boatyard</span>
+<body>
+    <a href="https://github.com/tutumcloud/boatyard"><img style="position: absolute; top: 0; right: 0; border: 0;" src="https://camo.githubusercontent.com/a6677b08c955af8400f44c6298f40e7d19cc5b2d/68747470733a2f2f73332e616d617a6f6e6177732e636f6d2f6769746875622f726962626f6e732f666f726b6d655f72696768745f677261795f3664366436642e706e67" alt="Fork me on GitHub" data-canonical-src="https://s3.amazonaws.com/github/ribbons/forkme_right_gray_6d6d6d.png"></a>
 
-	</div>
+    <div class="boatyard">
+        <span>boatyard</span>
 
-	<div class="container" id="input-form">
-		<form id="slick-login">
-			<input type="text" name="imagename" class="form-control" placeholder="Image Name" id="image_name" required>
-			<input type="text" name="username" class="form-control" placeholder="Username" id="user_name">
-			<input type="password" name="password" class="form-control" placeholder="Password" id="pass_word">
+    </div>
 
-			<!-- Nav tabs -->
-			<ul class="nav nav-tabs nav-pills" id="tabcontrol">
-			  <li class="active"><a href="#dockerfile" data-toggle="tab">Dockerfile</a></li>
-			  <li><a href="#github" data-toggle="tab">Github</a></li>
-			  <li><a href="#tarurl" data-toggle="tab">Tar Url</a></li>
-			</ul>
+    <div class="container" id="input-form">
+        <form id="slick-login">
+            <input type="text" name="imagename" class="form-control" placeholder="username/my-new-image" id="image_name" required>
+            <input type="text" name="username" class="form-control" placeholder="username" id="user_name">
+            <input type="password" name="password" class="form-control" placeholder="password" id="pass_word">
 
-			<!-- Tab panes -->
-			<div class="tab-content">
-				<div class="tab-pane active" id="dockerfile">
-					<textarea type="text" name="dockermessage" class="form-control" placeholder="Dockerfile" wrap="off" id="dockermessage"></textarea>
-					<button class="btn btn-primary btn-large" id="dockerfileButton" type="button">Submit</button>
-			  	</div>
+            <!-- Nav tabs -->
+            <ul class="nav nav-tabs nav-pills" id="tabcontrol">
+              <li class="active"><a href="#dockerfile" data-toggle="tab"><i class="fa fa-file-code-o"></i> From Dockerfile</a></li>
+              <li><a href="#github" data-toggle="tab"><i class="fa fa-github"></i> From GitHub</a></li>
+              <li><a href="#tarurl" data-toggle="tab"><i class="fa fa-cube"></i> From Tarball</a></li>
+            </ul>
 
-				<div class="tab-pane" id="github">
-				  	<input type="text" name="GHUsername" class="form-control" placeholder="Github Username" id="github_username">
-					<input type="text" name="GHRepoName" class="form-control" placeholder="Github Repository Name" id="github_reponame">
-					<input type="text" name="GHTagName" class="form-control" placeholder="Github Tag Name" id="github_tag">
-				  	<button class="btn btn-primary btn-large" id="githubButton" type="button">Submit</button>
-				</div>
+            <!-- Tab panes -->
+            <div class="tab-content">
+                <div class="tab-pane active" id="dockerfile">
+                    <textarea type="text" name="dockermessage" class="form-control" placeholder="FROM ubuntu:trusty" wrap="off" id="dockermessage"></textarea>
+                    <button class="btn btn-success btn-large" id="dockerfileButton" type="button"><i class="fa fa-wrench"></i> Build it!</button>
+                </div>
 
-			  	<div class="tab-pane" id="tarurl">
-			  		<input type="text" name="Tarurl" class="form-control" placeholder="Tar Url" id ="tarUrl">
-			  		<button class="btn btn-primary btn-large" id="tarurlButton" type="button">Submit</button>
-			  	</div>
-			</div>
-		</form>
+                <div class="tab-pane" id="github">
+                    <input type="text" name="GHUsername" class="form-control" placeholder="GitHub username" id="github_username">
+                    <input type="text" name="GHRepoName" class="form-control" placeholder="GitHub reponame" id="github_reponame">
+                    <input type="text" name="GHTagName" class="form-control" placeholder="GitHub tag" id="github_tag">
+                    <button class="btn btn-success btn-large" id="githubButton" type="button"><i class="fa fa-wrench"></i> Build it!</button>
+                </div>
 
-		<div class="logs-div" id="logs-div-id">
-		</div>
-	</div>
+                <div class="tab-pane" id="tarurl">
+                    <input type="text" name="Tarurl" class="form-control" placeholder="http://files.example.com/my-tarball.tar.gz" id="tarUrl">
+                    <button class="btn btn-success btn-large" id="tarurlButton" type="button"><i class="fa fa-wrench"></i> Build it!</button>
+                </div>
+            </div>
+        </form>
 
-	<div class="status-div" >			
-		<p id="status"></p>
-	</div>
+        <div class="logs-div" id="logs-div-id">
+            <i>Please wait...</i>
+        </div>
+    </div>
 
-	</body>
+    <div class="status-div">
+        <p id="status"></p>
+    </div>
+
+    <div class="hosting-notice">
+        Free boatyard service provided by <a href="http://www.tutum.co/" target="_blank">Tutum</a>
+    </div>
+
+    </body>
 </html>
 
 

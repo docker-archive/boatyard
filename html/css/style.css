@@ -75,7 +75,7 @@ table {
 }
 
 #input-form{
-	width: 500px;
+	width: 700px;
 	height: 350px;
 	top: 6%;
 	margin:0 auto;
@@ -88,9 +88,11 @@ table {
 }
 
 .logs-div {
+	font-family: "Courier New", Courier, monospace;
+	font-size: 11px;
 	background-color: black;
 	color: white;
-	width: 470px;
+	width: 100%;
 	height: 100%;
 	margin-top: 20px;
 	display: none;
@@ -115,10 +117,19 @@ table {
 input {
 	margin-top: 10px;
 }
-
-# input[type="text"]:focus,#slick-login input[type="password"]
 	
+.red {
+	color: red;
+}
 
+.green {
+	color: green;
+}
 
-
-
+.hosting-notice {
+	width: 100%;
+	text-align: center;
+	margin-top: 60px;
+	font-size: small;
+	display: none;
+}
