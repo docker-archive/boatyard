@@ -70,13 +70,19 @@ table {
 .status-div {
 	width: 100%;
 	text-align: center;
-	position: absolute;
 	margin-top: 30px;
+}
+
+.go-back-link {
+	width: 100%;
+	text-align: center;
+	margin-top: 30px;
+	display: none;
 }
 
 #input-form{
 	width: 700px;
-	height: 350px;
+	height: 400px;
 	top: 6%;
 	margin:0 auto;
 	display: block;
@@ -93,7 +99,7 @@ table {
 	background-color: black;
 	color: white;
 	width: 100%;
-	height: 100%;
+	height: 380px;
 	margin-top: 20px;
 	display: none;
 	overflow-y: auto;
@@ -128,6 +134,7 @@ input {
 
 .hosting-notice {
 	width: 100%;
+	position: absolute;
 	text-align: center;
 	margin-top: 60px;
 	font-size: small;
