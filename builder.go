@@ -173,9 +173,11 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 		n, err := c.Do("HSET", jobid.JobIdentifier, "status", "Building")
 		if n == 0 {
 			rest.Error(w, "Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 501)
+			return
 		}
 		if err != nil {
 			rest.Error(w, " err trigg Unable to access the redis cache.  Make sure the CACHE_PASSWORD is set.", 400)
+			return
 		}
 		c.Do("HSET", jobid.JobIdentifier, "logs", "Fetching logs...")
 
@@ -188,6 +190,7 @@ func BuildImageFromDockerfile(w rest.ResponseWriter, r *rest.Request) {
 	} else {
 		//Params didn't validate.  Bad Request.
 		rest.Error(w, "Insufficient Information.  Must provide at least an Image Name and a Dockerfile/Tarurl.", 400)
+		return
 	}
 
 }
@@ -210,6 +213,7 @@ func BuildPushAndDeleteImage(jobid string, passedParams PassedParams, c redis.Co
 	dockerConnection := httputil.NewClientConn(dockerDial, nil)
 	readerForInput, err := ReaderForInputType(passedParams, c, jobid)
 	if err != nil {
+		c.Do("HSET", jobid, "status", err)
 		return
 	}
 	buildReq, err := http.NewRequest("POST", buildUrl, readerForInput)
@@ -438,11 +442,11 @@ func ReaderForInputType(passedParams PassedParams, c redis.Conn, jobid string) (
 	case passedParams.TarFile != nil:
 		return bytes.NewReader(passedParams.TarFile), nil
 	case passedParams.Tar_url != "":
-		return ReaderForTarUrl(passedParams.Tar_url), nil
+		return ReaderForTarUrl(passedParams.Tar_url)
 	case passedParams.Github_tag != "" && passedParams.Github_username != "" && passedParams.Github_reponame != "":
 		return ReaderForGithubTar(passedParams, c, jobid)
 	default:
-		return nil, errors.New("Failed in the ReaderForInputType.  Got to default")
+		return nil, errors.New("Failed in the ReaderForInputType.  Got to default case.")
 	}
 
 }
@@ -524,16 +528,15 @@ func ReaderForGithubTar(passedParams PassedParams, c redis.Conn, jobid string) (
 }
 
 //URL example = https://github.com/tutumcloud/docker-hello-world/archive/v1.0.tar.gz
-func ReaderForTarUrl(url string) io.ReadCloser {
+func ReaderForTarUrl(url string) (io.ReadCloser, error) {
 
 	client := &http.Client{}
 	req, err := http.NewRequest("GET", url, nil)
 	response, err := client.Do(req)
 	if err != nil {
-		log.Fatalln(err)
+		return nil, errors.New("Failed response from Tarball Url.")
 	}
-	return response.Body
-
+	return response.Body, nil
 }
 
 func ReaderForDockerfile(dockerfile string) *bytes.Buffer {
