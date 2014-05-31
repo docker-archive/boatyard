@@ -370,7 +370,6 @@ func Dial() net.Conn {
 		log.Println("Failed to reach docker")
 		log.Fatal(err)
 	}
-
 	return dockerDial
 }
 
