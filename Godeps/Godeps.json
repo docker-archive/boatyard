@@ -1,0 +1,19 @@
+{
+	"ImportPath": "github.com/tutumcloud/boatyard",
+	"GoVersion": "go1.1.2",
+	"Deps": [
+		{
+			"ImportPath": "github.com/ant0ine/go-json-rest/rest",
+			"Comment": "v2.0.2",
+			"Rev": "e9a4e2b0d67bfe50d3754d74f4a668e64754039a"
+		},
+		{
+			"ImportPath": "github.com/garyburd/redigo/redis",
+			"Rev": "8f6bca66c46849e514ac5abfc71ac9b063c01409"
+		},
+		{
+			"ImportPath": "github.com/nu7hatch/gouuid",
+			"Rev": "179d4d0c4d8d407a32af483c2354df1d2c91e6c3"
+		}
+	]
+}
