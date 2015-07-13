@@ -1,5 +1,9 @@
 A Go web service which provides a HTTP API and a web UI for building, pushing, and deleting docker images.
 
+# Deprecation notice
+
+**This repository has been deprecated in favour of Tutum's new [Automated Build](https://support.tutum.co/support/solutions/articles/5000638474-automated-builds) functionality which uses the open source [tutum/builder](https://github.com/tutumcloud/builder) image for repository building.**
+
 # Running
 
 With docker and fig installed, and with docker listening in `tcp://localhost:4243`, simply run:
